@@ -29,7 +29,35 @@ async function run() {
     const foodCollection = client.db("shareFoodDB").collection("foods");
 
     app.get("/foods", async (req, res) => {
-      const result = await foodCollection.find().toArray();
+      const search = req.query?.search;
+      const sort = req.query?.sort;
+
+      let result, filter;
+
+      if (!search && !sort) {
+        result = await foodCollection.find().toArray();
+      } else {
+        filter = {
+          foodName: {
+            $regex: search,
+            $options: "i", // 'i' for case-insensitive
+          },
+        };
+        if (sort === "Expire") {
+          result = await foodCollection.find(filter).toArray();
+        } else if (sort === "Asc") {
+          const sort = {
+            expiredAt: 1, //Ascending order
+          };
+          result = await foodCollection.find(filter).sort(sort).toArray();
+        } else if (sort === "Desc") {
+          const sort = {
+            expiredAt: -1, //Ascending order
+          };
+          result = await foodCollection.find(filter).sort(sort).toArray();
+        }
+      }
+
       res.send(result);
     });
 
