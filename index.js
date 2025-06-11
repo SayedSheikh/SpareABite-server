@@ -3,11 +3,11 @@ const express = require("express");
 const cors = require("cors");
 const app = express();
 const port = process.env.PORT || 3000;
+const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 
 app.use(cors());
 app.use(express.json());
 
-const { MongoClient, ServerApiVersion } = require("mongodb");
 const uri = process.env.DB_CLIENT_URI;
 // console.log(uri);
 
@@ -27,6 +27,14 @@ async function run() {
     // Send a ping to confirm a successful connection
 
     const foodCollection = client.db("shareFoodDB").collection("foods");
+    const requestCollection = client
+      .db("shareFoodDB")
+      .collection("foodRequests");
+
+    app.get("/allFoods", async (req, res) => {
+      const result = await foodCollection.find().toArray();
+      res.send(result);
+    });
 
     app.get("/foods", async (req, res) => {
       const search = req.query?.search;
@@ -35,13 +43,14 @@ async function run() {
       let result, filter;
 
       if (!search && !sort) {
-        result = await foodCollection.find().toArray();
+        result = await foodCollection.find({ status: "Available" }).toArray();
       } else {
         filter = {
           foodName: {
             $regex: search,
             $options: "i", // 'i' for case-insensitive
           },
+          status: "Available",
         };
         if (sort === "Expire") {
           result = await foodCollection.find(filter).toArray();
@@ -52,11 +61,23 @@ async function run() {
           result = await foodCollection.find(filter).sort(sort).toArray();
         } else if (sort === "Desc") {
           const sort = {
-            expiredAt: -1, //Ascending order
+            expiredAt: -1, //Descending order
           };
           result = await foodCollection.find(filter).sort(sort).toArray();
         }
       }
+
+      res.send(result);
+    });
+
+    app.get("/food/:id", async (req, res) => {
+      const { id } = req.params;
+
+      const filter = {
+        _id: new ObjectId(id),
+      };
+
+      const result = await foodCollection.findOne(filter);
 
       res.send(result);
     });
@@ -69,6 +90,143 @@ async function run() {
       data.quantity = quantity;
 
       const result = await foodCollection.insertOne(data);
+      res.send(result);
+    });
+    app.delete("/food/:id", async (req, res) => {
+      const { id } = req.params;
+
+      const filter = {
+        _id: new ObjectId(id),
+      };
+
+      const deletfoodId = {
+        foodId: id,
+      };
+
+      await requestCollection.deleteOne(deletfoodId);
+
+      const result = await foodCollection.deleteOne(filter);
+
+      res.send(result);
+    });
+
+    app.post("/food/:id", async (req, res) => {
+      const values = req.body;
+
+      values.quantity = Number(values.quantity);
+
+      const filter = {
+        _id: new ObjectId(req.params.id),
+      };
+
+      const updatedData = {
+        $set: values,
+      };
+
+      const result = await foodCollection.updateOne(filter, updatedData, {
+        upsert: true,
+      });
+
+      res.send(result);
+    });
+
+    // My Mnanaged Foods
+
+    app.get("/myManagedFoods", async (req, res) => {
+      const { email } = req.query;
+      const filter = {
+        donorEmail: email,
+      };
+
+      const result = await foodCollection.find(filter).toArray();
+
+      for (food of result) {
+        const query = {
+          foodId: food._id.toString(),
+        };
+
+        const requested = await requestCollection.findOne(query);
+
+        food.requested = requested;
+      }
+
+      res.send(result);
+    });
+
+    // food request get api
+
+    app.get("/foodRequests", async (req, res) => {
+      const email = req.query.email || "none";
+
+      const result = await requestCollection
+        .find({ userEmail: email })
+        .toArray();
+
+      for (food of result) {
+        const foodInfo = await foodCollection.findOne({
+          _id: new ObjectId(food.foodId),
+        });
+
+        food.foodInfo = foodInfo;
+      }
+
+      res.send(result);
+    });
+
+    // food req post api
+    app.post("/foodRequets", async (req, res) => {
+      const reqFoodid = req.body.foodId;
+
+      await foodCollection.updateOne(
+        { _id: new ObjectId(reqFoodid) },
+        { $set: { status: "Requested" } }
+      );
+
+      const result = await requestCollection.insertOne(req.body);
+
+      res.send(result);
+    });
+
+    // delete a specific food req
+
+    app.delete("/foodRequests/:id", async (req, res) => {
+      // console.log(req.params.id);
+      const email = req.query.email || "";
+
+      const reqFood = await requestCollection.findOne({
+        _id: new ObjectId(req.params.id),
+      });
+
+      await foodCollection.updateOne(
+        {
+          _id: new ObjectId(reqFood.foodId),
+        },
+        { $set: { status: "Available" } }
+      );
+
+      const result = await requestCollection.deleteOne({
+        _id: new ObjectId(req.params.id),
+      });
+
+      res.send(result);
+    });
+
+    // edit requested food note patch request
+
+    app.patch("/foodRequests/:id", async (req, res) => {
+      const eamil = req.query.email;
+      // console.log(req.body, req.params.id);
+
+      const query = {
+        _id: new ObjectId(req.params.id),
+      };
+
+      const updatedInfo = {
+        $set: req.body,
+      };
+
+      const result = await requestCollection.updateOne(query, updatedInfo);
+
       res.send(result);
     });
   } finally {
