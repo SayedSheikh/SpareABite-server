@@ -23,13 +23,26 @@ const client = new MongoClient(uri, {
 async function run() {
   try {
     // Connect the client to the server	(optional starting in v4.7)
-    await client.connect();
+    // await client.connect();
     // Send a ping to confirm a successful connection
 
     const foodCollection = client.db("shareFoodDB").collection("foods");
+    const reviewsCollection = client.db("shareFoodDB").collection("reviews");
     const requestCollection = client
       .db("shareFoodDB")
       .collection("foodRequests");
+
+    // get featured Foods data
+
+    app.get("/featuredFoods", async (req, res) => {
+      const sort = {
+        quantity: -1,
+      };
+
+      const result = await foodCollection.find().sort(sort).limit(6).toArray();
+
+      res.send(result);
+    });
 
     app.get("/allFoods", async (req, res) => {
       const result = await foodCollection.find().toArray();
@@ -72,6 +85,10 @@ async function run() {
 
     app.get("/food/:id", async (req, res) => {
       const { id } = req.params;
+
+      if (!/^[a-fA-F0-9]{24}$/.test(id)) {
+        res.send([]);
+      }
 
       const filter = {
         _id: new ObjectId(id),
@@ -214,7 +231,7 @@ async function run() {
     // edit requested food note patch request
 
     app.patch("/foodRequests/:id", async (req, res) => {
-      const eamil = req.query.email;
+      const eamil = req.query?.email || "none";
       // console.log(req.body, req.params.id);
 
       const query = {
@@ -227,6 +244,19 @@ async function run() {
 
       const result = await requestCollection.updateOne(query, updatedInfo);
 
+      res.send(result);
+    });
+
+    // reviews
+    app.get("/reviews", async (req, res) => {
+      const result = await reviewsCollection.find().toArray();
+      res.send(result);
+    });
+
+    // post review validity with token
+
+    app.post("/reviews", async (req, res) => {
+      const result = await reviewsCollection.insertOne(req.body);
       res.send(result);
     });
   } finally {
