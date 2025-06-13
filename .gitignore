@@ -1,2 +1,5 @@
 .env
 node_modules
+spare-a-bite-firebase-adminsdk.json
+keyConvert.js
+.vercel

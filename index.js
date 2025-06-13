@@ -5,8 +5,56 @@ const app = express();
 const port = process.env.PORT || 3000;
 const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 
+const admin = require("firebase-admin");
+
+const decoded = Buffer.from(process.env.FIREBASE_ADMIN_SDK, "base64").toString(
+  "utf8"
+);
+
+const serviceAccount = JSON.parse(decoded);
+// var serviceAccount = require("./spare-a-bite-firebase-adminsdk.json");
+
+admin.initializeApp({
+  credential: admin.credential.cert(serviceAccount),
+});
+
 app.use(cors());
 app.use(express.json());
+
+const verifyToken = async (req, res, next) => {
+  const { authorization } = req.headers || "";
+
+  if (!authorization || !authorization.startsWith("Bearer")) {
+    return res.status(401).send({ message: "Unauthorized Access" });
+  }
+
+  try {
+    const token = authorization.split(" ")[1];
+    const decoded = await admin.auth().verifyIdToken(token);
+    req.decoded = decoded;
+
+    next();
+  } catch (err) {
+    return res.status(401).send({ message: "Unauthorized : Invalid token" });
+  }
+};
+
+const verifyEmail = (req, res, next) => {
+  let reqEmail = req.query?.email || "";
+
+  const email = req.decoded?.email;
+
+  console.log(req.decoded);
+
+  console.log("requested email =", reqEmail);
+  console.log("token email =", email);
+
+  if (reqEmail !== email) {
+    return res.status(403).send({ message: "Forbidden : Access Denied" });
+  } else {
+    next();
+  }
+};
 
 const uri = process.env.DB_CLIENT_URI;
 // console.log(uri);
@@ -99,7 +147,7 @@ async function run() {
       res.send(result);
     });
 
-    app.post("/food", async (req, res) => {
+    app.post("/food", verifyToken, async (req, res) => {
       const data = req.body;
 
       const quantity = Number(data.quantity);
@@ -109,7 +157,7 @@ async function run() {
       const result = await foodCollection.insertOne(data);
       res.send(result);
     });
-    app.delete("/food/:id", async (req, res) => {
+    app.delete("/food/:id", verifyToken, async (req, res) => {
       const { id } = req.params;
 
       const filter = {
@@ -127,7 +175,7 @@ async function run() {
       res.send(result);
     });
 
-    app.post("/food/:id", async (req, res) => {
+    app.post("/food/:id", verifyToken, async (req, res) => {
       const values = req.body;
 
       values.quantity = Number(values.quantity);
@@ -149,7 +197,7 @@ async function run() {
 
     // My Mnanaged Foods
 
-    app.get("/myManagedFoods", async (req, res) => {
+    app.get("/myManagedFoods", verifyToken, verifyEmail, async (req, res) => {
       const { email } = req.query;
       const filter = {
         donorEmail: email,
@@ -172,7 +220,7 @@ async function run() {
 
     // food request get api
 
-    app.get("/foodRequests", async (req, res) => {
+    app.get("/foodRequests", verifyToken, verifyEmail, async (req, res) => {
       const email = req.query.email || "none";
 
       const result = await requestCollection
@@ -191,7 +239,7 @@ async function run() {
     });
 
     // food req post api
-    app.post("/foodRequets", async (req, res) => {
+    app.post("/foodRequets", verifyToken, async (req, res) => {
       const reqFoodid = req.body.foodId;
 
       await foodCollection.updateOne(
@@ -230,22 +278,27 @@ async function run() {
 
     // edit requested food note patch request
 
-    app.patch("/foodRequests/:id", async (req, res) => {
-      const eamil = req.query?.email || "none";
-      // console.log(req.body, req.params.id);
+    app.patch(
+      "/foodRequests/:id",
+      verifyToken,
+      verifyEmail,
+      async (req, res) => {
+        const eamil = req.query?.email || "none";
+        // console.log(req.body, req.params.id);
 
-      const query = {
-        _id: new ObjectId(req.params.id),
-      };
+        const query = {
+          _id: new ObjectId(req.params.id),
+        };
 
-      const updatedInfo = {
-        $set: req.body,
-      };
+        const updatedInfo = {
+          $set: req.body,
+        };
 
-      const result = await requestCollection.updateOne(query, updatedInfo);
+        const result = await requestCollection.updateOne(query, updatedInfo);
 
-      res.send(result);
-    });
+        res.send(result);
+      }
+    );
 
     // reviews
     app.get("/reviews", async (req, res) => {
@@ -253,9 +306,9 @@ async function run() {
       res.send(result);
     });
 
-    // post review validity with token
+    // post review, checked validity with token
 
-    app.post("/reviews", async (req, res) => {
+    app.post("/reviews", verifyToken, async (req, res) => {
       const result = await reviewsCollection.insertOne(req.body);
       res.send(result);
     });
