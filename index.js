@@ -21,6 +21,7 @@ admin.initializeApp({
 app.use(cors());
 app.use(express.json());
 
+// firebase token verification middleware
 const verifyToken = async (req, res, next) => {
   const { authorization } = req.headers || "";
 
@@ -39,6 +40,7 @@ const verifyToken = async (req, res, next) => {
   }
 };
 
+// email verification middleware
 const verifyEmail = (req, res, next) => {
   let reqEmail = req.query?.email || "";
 
@@ -57,7 +59,6 @@ const verifyEmail = (req, res, next) => {
 };
 
 const uri = process.env.DB_CLIENT_URI;
-// console.log(uri);
 
 // Create a MongoClient with a MongoClientOptions object to set the Stable API version
 const client = new MongoClient(uri, {
@@ -70,17 +71,13 @@ const client = new MongoClient(uri, {
 
 async function run() {
   try {
-    // Connect the client to the server	(optional starting in v4.7)
-    // await client.connect();
-    // Send a ping to confirm a successful connection
-
     const foodCollection = client.db("shareFoodDB").collection("foods");
     const reviewsCollection = client.db("shareFoodDB").collection("reviews");
     const requestCollection = client
       .db("shareFoodDB")
       .collection("foodRequests");
 
-    // get featured Foods data
+    // get featured foods descenfing ordered by quantity and limit 6
 
     app.get("/featuredFoods", async (req, res) => {
       const sort = {
@@ -92,11 +89,13 @@ async function run() {
       res.send(result);
     });
 
+    // get all foods
     app.get("/allFoods", async (req, res) => {
       const result = await foodCollection.find().toArray();
       res.send(result);
     });
 
+    //  get only available foods
     app.get("/foods", async (req, res) => {
       const search = req.query?.search;
       const sort = req.query?.sort;
@@ -109,7 +108,7 @@ async function run() {
         filter = {
           foodName: {
             $regex: search,
-            $options: "i", // 'i' for case-insensitive
+            $options: "i",
           },
           status: "Available",
         };
@@ -131,6 +130,7 @@ async function run() {
       res.send(result);
     });
 
+    // get a spesific food with id
     app.get("/food/:id", async (req, res) => {
       const { id } = req.params;
 
@@ -147,6 +147,8 @@ async function run() {
       res.send(result);
     });
 
+    // post a food details
+
     app.post("/food", verifyToken, async (req, res) => {
       const data = req.body;
 
@@ -157,6 +159,8 @@ async function run() {
       const result = await foodCollection.insertOne(data);
       res.send(result);
     });
+
+    // delete a shared food
     app.delete("/food/:id", verifyToken, async (req, res) => {
       const { id } = req.params;
 
@@ -175,6 +179,7 @@ async function run() {
       res.send(result);
     });
 
+    // update a shared food
     app.post("/food/:id", verifyToken, async (req, res) => {
       const values = req.body;
 
